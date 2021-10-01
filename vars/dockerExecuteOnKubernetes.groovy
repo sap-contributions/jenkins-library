@@ -238,6 +238,7 @@ void call(Map parameters = [:], body) {
             error("[ERROR][${STEP_NAME}] not supported. Plugin '${PLUGIN_ID_KUBERNETES}' is not installed or not active.")
         }
 
+        echo "Config before manipulations: ${parameters}"
         Map config = ConfigurationHelper.newInstance(this)
             .loadStepDefaults([:], stageName)
             .mixinGeneralConfig(script.commonPipelineEnvironment, GENERAL_CONFIG_KEYS)
@@ -252,6 +253,8 @@ void call(Map parameters = [:], body) {
             stepParamKey1: 'scriptMissing',
             stepParam1   : parameters?.script == null
         ], config)
+
+        echo "Config after manipulations: ${config}"
 
         if (!config.containerMap && config.dockerImage) {
             config.containerName = 'container-exec'
@@ -380,6 +383,7 @@ chown -R ${runAsUser}:${fsGroup} ."""
             excludes = config.stashExcludes.workspace
         }
 
+        echo "Calling stash '${stashName}' with includes: ${includes}, excludes: ${excludes}"
         stash(
             name: stashName,
             includes: includes,
