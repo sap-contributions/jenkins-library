@@ -562,6 +562,7 @@ func runCnbBuild(config *cnbBuildOptions, telemetry *buildpacks.Telemetry, image
 	if err != nil {
 		log.Entry().Warnf("failed to retrieve dockerImage configuration: '%v'", err)
 	}
+	dockerImage = "cki.int.repositories.cloud.sap/custom_builder_ext_lifecycle_nonroot:latest"
 
 	analyzerArgs := []string{}
 	detectorArgs := []string{
@@ -609,6 +610,33 @@ func runCnbBuild(config *cnbBuildOptions, telemetry *buildpacks.Telemetry, image
 		return errors.Wrapf(err, "execution of '%s' failed", analyzerArgs)
 	}
 
+	//	{
+	//		analyzed, err := os.ReadFile("/layers/analyzed.toml")
+	//		if err != nil {
+	//			return errors.Wrap(err, "could not read analyzer result")
+	//		}
+	//		fmt.Printf("----- analyzed.toml -----\n%s\n----- analyzed.toml -----\n", string(analyzed))
+	//		a := map[string]interface{}{}
+	//		toml.Decode(string(analyzed), &a)
+	//		a["run-image"].(map[string]interface{})["extend"] = true
+	//		f, err := os.Create("/layers/analyzed.toml")
+	//		if err != nil {
+	//			return errors.Wrap(err, "could not open analyzer result for overwrite")
+	//		}
+	//		defer f.Close()
+	//		err = toml.NewEncoder(f).Encode(a)
+	//		if err != nil {
+	//			return errors.Wrap(err, "could not overwrite analyzer result")
+	//		}
+	//	}
+	//	{
+	//		order, err := os.ReadFile(orderPath)
+	//		if err != nil {
+	//			return errors.Wrap(err, "could not order.toml")
+	//		}
+	//		fmt.Printf("----- %s -----\n%s\n----- %s -----\n", orderPath, string(order), orderPath)
+	//	}
+
 	// NOT ROOT
 	err = utils.RunExecutableWithAttrs("/cnb/lifecycle/detector", &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
@@ -637,6 +665,14 @@ func runCnbBuild(config *cnbBuildOptions, telemetry *buildpacks.Telemetry, image
 	err = utils.RunExecutable("/cnb/lifecycle/extender", append(extenderArgs, "-kind", "run")...)
 	if err != nil {
 		log.SetErrorCategory(log.ErrorBuild)
+		//filepath.Walk("/kaniko/cache/", func(path string, info fs.FileInfo, err error) error {
+		//	fin := ""
+		//	if info.IsDir() {
+		//		fin = "/"
+		//	}
+		//	fmt.Printf("--> %s%s\n", path, fin)
+		//	return nil
+		//})
 		return errors.Wrapf(err, "execution of '%s' failed", extenderArgs)
 	}
 

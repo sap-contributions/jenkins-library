@@ -9,10 +9,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
@@ -22,8 +26,9 @@ const (
 
 func setupDockerRegistry(t *testing.T, ctx context.Context) testcontainers.Container {
 	reqRegistry := testcontainers.ContainerRequest{
-		Image:      "registry:2",
-		SkipReaper: true,
+		Image:        "registry:2",
+		ExposedPorts: []string{"5000:5000"},
+		SkipReaper:   true,
 	}
 
 	regContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -167,6 +172,58 @@ func TestCNBIntegrationZipPath(t *testing.T) {
 	)
 	container.assertHasFiles(t, "/project/bom-docker-0.xml")
 	container.terminate(t)
+}
+
+func TestCNBIntegrationExtension(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	registryContainer := setupDockerRegistry(t, ctx)
+	defer registryContainer.Terminate(ctx)
+
+	container := givenThisContainer(t, IntegrationTestDockerExecRunnerBundle{
+		Image:   "cki.int.repositories.cloud.sap/custom_builder_ext_lifecycle_nonroot:latest",
+		User:    "0",
+		TestDir: []string{"testdata", "TestMtaIntegration", "npm"},
+		Network: "host", //fmt.Sprintf("container:%s", registryContainer.GetContainerID()),
+	})
+
+	err := container.whenRunningPiperCommand("cnbBuild", "--noTelemetry", "--verbose", "--containerImageName", "not-found", "--containerImageTag", "0.0.1", "--containerRegistryUrl", registryURL)
+	assert.NoError(t, err)
+
+	fmt.Println(container.getPiperOutput())
+	container.assertHasOutput(t,
+		"Paketo Buildpack for NPM Start",
+		fmt.Sprintf("Saving %s/not-found:0.0.1", registryURL),
+		"*** Images (sha256:",
+		"SUCCESS",
+	)
+	container.terminate(t)
+
+	dp, err := testcontainers.NewDockerProvider()
+	require.NoError(t, err)
+	appContainer, err := dp.CreateContainer(ctx, testcontainers.ContainerRequest{
+		Image:           fmt.Sprintf("%s/not-found:0.0.1", registryURL),
+		AlwaysPullImage: true,
+		SkipReaper:      true,
+		Entrypoint:      []string{"bash"},
+		Cmd:             []string{"-c", "cat /testfile"},
+		WaitingFor:      wait.ForLog("hello"),
+	})
+	require.NoError(t, err)
+	defer appContainer.Terminate(ctx)
+
+	err = appContainer.Start(ctx)
+	require.NoError(t, err)
+
+	assert.EventuallyWithT(t, func(t *assert.CollectT) {
+		logReader, err := appContainer.Logs(ctx)
+		assert.NoError(t, err)
+		defer logReader.Close()
+		log, err := io.ReadAll(logReader)
+		assert.NoError(t, err)
+
+		assert.Equal(t, "hello\n", string(log)) // This fails because of old testcontainers
+	}, 5*time.Second, 50*time.Millisecond)
 }
 
 func TestCNBIntegrationNonZipPath(t *testing.T) {
